@@ -4,6 +4,26 @@ import CredentialsProvider from "next-auth/providers/credentials";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
+function getAccessTokenExpiryMs(token: string): number | null {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()) as { exp?: number };
+    return payload.exp ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshAccessToken(refreshToken: string): Promise<string | null> {
+  const res = await fetch(`${API_URL}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { accessToken: string };
+  return data.accessToken;
+}
+
 /**
  * Two sign-in paths, both converging on the same backend-issued JWT pair:
  *
@@ -90,6 +110,20 @@ export const authOptions: NextAuthOptions = {
         token.apiAccessToken = (user as any).apiAccessToken;
         token.apiRefreshToken = (user as any).apiRefreshToken;
         token.apiUser = (user as any).apiUser;
+      }
+
+      if (token.apiRefreshToken && token.apiAccessToken) {
+        const expiresAt = getAccessTokenExpiryMs(token.apiAccessToken as string);
+        if (expiresAt && Date.now() >= expiresAt - 60_000) {
+          const nextAccessToken = await refreshAccessToken(token.apiRefreshToken as string);
+          if (nextAccessToken) {
+            token.apiAccessToken = nextAccessToken;
+            delete token.apiError;
+          } else {
+            token.apiAccessToken = undefined;
+            token.apiError = "TOKEN_REFRESH_FAILED";
+          }
+        }
       }
 
       return token;

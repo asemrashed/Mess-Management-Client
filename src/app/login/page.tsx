@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 export default function LoginPage() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -15,8 +15,17 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (status === "authenticated") router.replace("/create-mess");
-  }, [status, router]);
+    if (new URLSearchParams(window.location.search).get("error") === "api_auth") {
+      setError("Your session expired or could not reach the API. Please sign in again.");
+    }
+  }, []);
+
+  useEffect(() => {
+    const apiAccessToken = (session as { apiAccessToken?: string } | null)?.apiAccessToken;
+    if (status === "authenticated" && apiAccessToken) {
+      router.replace("/create-mess");
+    }
+  }, [status, session, router]);
 
   async function handleCredentialsLogin(e: React.FormEvent) {
     e.preventDefault();
