@@ -1,87 +1,82 @@
-# MMS — Mess Management System
+# MMS Frontend (Next.js + TypeScript, external API)
 
-A multi-tenant web app for bachelor messes, hostels, and shared apartments: meals,
-groceries, bills, rent, advances, payments, monthly statements, polls, routines,
-notifications, rules, member management, and permanent exit/settlement.
+Talks exclusively to the separate `mms-backend` Express API over REST — no server
+actions, no Prisma, no direct DB access from this app.
 
-This build uses a **separate frontend and backend** (not the Next.js-monolith
-architecture originally sketched in the master plan):
+## Setup
 
-```
-mms-backend/    Express + TypeScript + Prisma + PostgreSQL — standalone REST API
-mms-frontend/   Next.js + TypeScript — calls the API over HTTP, no server-side DB access
-```
-
-## Quick start
-
-**1. Backend**
 ```bash
-cd mms-backend
 npm install
-cp .env.example .env        # set DATABASE_URL/DIRECT_URL (Neon), GOOGLE_CLIENT_ID, JWT secrets
-npx prisma migrate dev --name init
-npm run seed                  # optional demo data
-npm run dev                    # http://localhost:4000
-```
-
-**2. Frontend**
-```bash
-cd mms-frontend
-npm install
-cp .env.local.example .env.local   # NEXT_PUBLIC_API_URL=http://localhost:4000, Google OAuth creds, NEXTAUTH_SECRET
+cp .env.local.example .env.local   # fill in NEXT_PUBLIC_API_URL, NEXTAUTH_SECRET, GOOGLE_CLIENT_ID/SECRET
 npm run dev                          # http://localhost:3000
 ```
 
-Both `.env` files need the **same** `GOOGLE_CLIENT_ID` — the frontend runs the Google
-sign-in flow, and the backend independently verifies the resulting ID token before
-issuing its own JWTs. See each project's README for full endpoint lists and auth details.
+You'll need a Google OAuth Client ID (Web application type) with:
+- Authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
+- The **same** `GOOGLE_CLIENT_ID` must also be set as `GOOGLE_CLIENT_ID` in the backend's
+  `.env`, since the backend independently verifies the ID token's audience.
 
-## What's genuinely working end-to-end
+## Auth flow
 
-Auth (Google **and** manual email/password registration/login, with email verification
-and forgot/reset password over SMTP), multi-tenant Mess creation/joining (invite link +
-join code), role-based permissions (Admin/Manager/Member) enforced server-side, feature
-toggles enforced server-side, meal submission with real deadline + payment-blocking logic,
-meal overrides with audit trail, guest meals, grocery submit→approve/reject workflow,
-notes, polls, bills with equal/custom splitting, payments/advances/ledger, accounting
-periods with transactional idempotent monthly closing, privacy-filtered statements,
-routines with completion tracking, permanent exit with settlement calculation, member
-directory, rules, CSV export, audit logs, manager rotation with expiry sweep.
+Two paths, both landing on the same backend JWT pair, stored in `session.apiAccessToken`:
 
-## Auth & Email
+1. **Google** — user clicks "Continue with Google" on `/login` → NextAuth runs the OAuth
+   flow → in the `jwt` callback (`src/lib/authOptions.ts`) we take the Google `id_token`
+   and POST it to the backend's `POST /auth/google`, which verifies it and returns JWTs.
+2. **Email/password** — the same `/login` page has a form wired to NextAuth's
+   `CredentialsProvider`. Its `authorize()` calls the backend's `POST /auth/login`
+   directly and returns the resulting user + JWTs, which the `jwt` callback copies onto
+   the session the same way as the Google path. `/register` calls `POST /auth/register`
+   then immediately signs in via the same credentials provider. `/forgot-password` and
+   `/reset-password/[token]` call the backend's forgot/reset endpoints directly (no
+   NextAuth session needed for those). `/verify-email/[token]` confirms the emailed link.
 
-- **Google OAuth** and **manual email/password** both work and both land on the same
-  backend-issued JWT pair — see each project's README for the exact flow.
-- **SMTP is required for the "forgot to everything" email flow** to actually send mail
-  (registration verification, password reset, welcome, and optional per-notification
-  copies). Without `SMTP_HOST`/`PORT`/`USER`/`PASS` set in the backend's `.env`, emails
-  are logged to the console instead of sent, so local dev works either way — but you'll
-  want real SMTP credentials before deploying. Any provider works (Gmail app password,
-  SendGrid, Mailgun, SES, Resend's SMTP endpoint, etc).
-- **Where to find `GOOGLE_CLIENT_ID`**: see the note at the bottom of this README.
+Either path ends the same way: `Authorization: Bearer <apiAccessToken>` attached to every
+API call via `src/lib/api.ts`. The backend never trusts NextAuth session cookies, only its
+own JWTs — issued only after independently verifying Google or a password.
 
-## What's intentionally left as stubs
+## Structure
 
-- Backup export to object storage (creates a DB record; actual S3/Cloudinary upload not implemented)
-- CSV import
-- PDF statement rendering
-- A dedicated routine-creation UI (the API fully supports it)
+```
+src/
+├── app/
+│   ├── page.tsx                    landing page
+│   ├── login/                      Google + email/password sign-in
+│   ├── register/                   manual account creation
+│   ├── forgot-password/            request a reset link
+│   ├── reset-password/[token]/     consume the reset link
+│   ├── verify-email/[token]/       confirm a registration email
+│   ├── create-mess/, join/         Mess creation & joining
+│   ├── api/auth/[...nextauth]/     NextAuth route handler
+│   └── mess/[messUsername]/
+│       ├── layout.tsx               nav shell, loads Mess + role via MessContext
+│       ├── dashboard/
+│       ├── meals/                   fully wired: quantity steppers, 8s poll, deadline errors
+│       ├── groceries/               submit + manager approve/reject
+│       ├── notes/, polls/           fully wired
+│       ├── bills/, payments/, advances/   fully wired
+│       ├── routines/, exit/         fully wired core flows
+│       ├── members/, rules/         fully wired
+│       ├── reports/, settings/      admin-only, fully wired
+├── lib/api.ts                       fetch client, attaches JWT
+├── lib/authOptions.ts               NextAuth config + backend token exchange
+├── context/MessContext.tsx          current Mess + role + settings
+└── components/AuthGate.tsx          redirects signed-out users to /login
+```
 
-## Finding your GOOGLE_CLIENT_ID
+## Live data strategy
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com/) and create (or select) a project.
-2. **APIs & Services → OAuth consent screen** — configure it (External is fine for testing; add yourself as a test user if it's in "Testing" publishing status).
-3. **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
-4. Application type: **Web application**.
-5. Add Authorized redirect URI: `http://localhost:3000/api/auth/callback/google` (add your production URL's equivalent later, e.g. `https://yourdomain.com/api/auth/callback/google`).
-6. Save — you'll get a **Client ID** and **Client Secret**.
-7. Put the **same** Client ID in both `.env` files:
-   - `mms-backend/.env` → `GOOGLE_CLIENT_ID` (used to verify the token's audience — no secret needed here, since the backend only verifies ID tokens)
-   - `mms-frontend/.env.local` → `GOOGLE_CLIENT_ID` **and** `GOOGLE_CLIENT_SECRET` (NextAuth needs both to run the OAuth flow)
+Per the master plan: no WebSockets. The meal board polls every 8s, groceries/notes/polls
+poll every 20s, and every list has a manual refresh path via TanStack Query's refetch.
+Financial mutations (payments, advances, closing) are never treated as optimistic — the UI
+always waits for the server response and re-fetches.
 
-## Not run/verified
+## What's stubbed
 
-My build environment has no network access, so `npm install`, `prisma migrate`, and
-`next build` were never executed against this code — you'll need to do that locally.
-The code is complete and internally consistent, but treat the first `npm install` +
-`npm run dev` locally as the real smoke test.
+- **Routine creation form** — the API (`POST /mess/:messUsername/routines`) supports full
+  rotation schedules; the UI only lists/completes assignments. Add a creation form matching
+  your household's rotation pattern.
+- **Invitation-link landing** — `/join/invite/[token]` joins the Mess but redirects to
+  `/create-mess` afterward since the API doesn't return the Mess username on that route;
+  wire that up however you encode/share invite links.
+- No PDF statement rendering (CSV export only, from the backend).
