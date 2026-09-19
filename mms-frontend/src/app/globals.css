@@ -34,3 +34,22 @@ body {
 .badge {
   @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
 }
+
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+.thin-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 999px;
+}
+.thin-scroll::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}

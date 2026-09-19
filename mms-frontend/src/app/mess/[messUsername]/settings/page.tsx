@@ -40,7 +40,7 @@ export default function SettingsPage() {
   const params = useParams<{ messUsername: string }>();
   const qc = useQueryClient();
   const [form, setForm] = useState<Record<string, any>>({});
-  const [confirm, setConfirm] = useState<"save" | { closeId: string } | null>(null);
+  const [confirm, setConfirm] = useState<"save" | { closeId: string } | { reopenId: string } | null>(null);
 
   useEffect(() => {
     if (mess?.settings) {
@@ -83,6 +83,14 @@ export default function SettingsPage() {
 
   const closePeriod = useMutation({
     mutationFn: (id: string) => api.post(`/mess/${params.messUsername}/periods/${id}/close`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["periods", params.messUsername] });
+      setConfirm(null);
+    },
+  });
+
+  const reopenPeriod = useMutation({
+    mutationFn: (id: string) => api.post(`/mess/${params.messUsername}/periods/${id}/reopen`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["periods", params.messUsername] });
       setConfirm(null);
@@ -173,6 +181,9 @@ export default function SettingsPage() {
         {openPeriod.isError && (
           <p className="text-sm text-red-600">{(openPeriod.error as Error)?.message || "Could not open period"}</p>
         )}
+        {reopenPeriod.isError && (
+          <p className="text-sm text-red-600">{(reopenPeriod.error as Error)?.message || "Could not reopen period"}</p>
+        )}
         <ul className="divide-y text-sm">
           {periods?.periods?.map((p: any) => (
             <li key={p.id} className="py-2 flex items-center justify-between">
@@ -188,6 +199,15 @@ export default function SettingsPage() {
                     disabled={closePeriod.isPending}
                   >
                     Close & Generate Statements
+                  </button>
+                )}
+                {(p.status === "CLOSED" || p.status === "CLOSING") && (
+                  <button
+                    className="btn-secondary text-xs"
+                    onClick={() => setConfirm({ reopenId: p.id })}
+                    disabled={reopenPeriod.isPending}
+                  >
+                    Reopen
                   </button>
                 )}
               </div>
@@ -207,13 +227,22 @@ export default function SettingsPage() {
         onCancel={() => setConfirm(null)}
       />
       <ConfirmModal
-        open={typeof confirm === "object" && confirm !== null}
+        open={typeof confirm === "object" && confirm !== null && "closeId" in confirm}
         title="Close this accounting period?"
-        message="Statements will be generated and this month will be locked. This cannot be undone."
+        message="Statements will be generated and this month will be locked. You can reopen it later as admin if something still needs recording."
         confirmLabel="Close period"
         danger
         pending={closePeriod.isPending}
-        onConfirm={() => typeof confirm === "object" && confirm && closePeriod.mutate(confirm.closeId)}
+        onConfirm={() => typeof confirm === "object" && confirm && "closeId" in confirm && closePeriod.mutate(confirm.closeId)}
+        onCancel={() => setConfirm(null)}
+      />
+      <ConfirmModal
+        open={typeof confirm === "object" && confirm !== null && "reopenId" in confirm}
+        title="Reopen this accounting period?"
+        message="Groceries and bills can be added again. Previous statements become draft and will be regenerated on the next close."
+        confirmLabel="Reopen period"
+        pending={reopenPeriod.isPending}
+        onConfirm={() => typeof confirm === "object" && confirm && "reopenId" in confirm && reopenPeriod.mutate(confirm.reopenId)}
         onCancel={() => setConfirm(null)}
       />
     </div>

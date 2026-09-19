@@ -2,6 +2,7 @@
 
 import { useMess } from "@/context/MessContext";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { Pagination } from "@/components/Pagination";
 import { api } from "@/lib/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
@@ -16,6 +17,7 @@ export default function AdvancesPage() {
   const [userId, setUserId] = useState("");
   const [amount, setAmount] = useState("");
   const [type, setType] = useState("DEPOSIT");
+  const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<any | null>(null);
   const [confirm, setConfirm] = useState<{ kind: "create" } | { kind: "save" } | { kind: "delete"; id: string } | null>(null);
 
@@ -26,8 +28,11 @@ export default function AdvancesPage() {
   });
 
   const { data } = useQuery({
-    queryKey: ["advances", params.messUsername],
-    queryFn: () => api.get<{ transactions: any[] }>(`/mess/${params.messUsername}/advances`),
+    queryKey: ["advances", params.messUsername, page],
+    queryFn: () =>
+      api.get<{ transactions: any[]; page: number; totalPages: number; total: number }>(
+        `/mess/${params.messUsername}/advances?page=${page}&pageSize=10`
+      ),
   });
 
   const record = useMutation({
@@ -37,6 +42,8 @@ export default function AdvancesPage() {
       setConfirm(null);
       qc.invalidateQueries({ queryKey: ["advances", params.messUsername] });
       qc.invalidateQueries({ queryKey: ["balance", params.messUsername] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts", params.messUsername] });
+      qc.invalidateQueries({ queryKey: ["overview", params.messUsername] });
     },
   });
 
@@ -52,6 +59,8 @@ export default function AdvancesPage() {
       setConfirm(null);
       qc.invalidateQueries({ queryKey: ["advances", params.messUsername] });
       qc.invalidateQueries({ queryKey: ["balance", params.messUsername] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts", params.messUsername] });
+      qc.invalidateQueries({ queryKey: ["overview", params.messUsername] });
     },
   });
 
@@ -61,6 +70,8 @@ export default function AdvancesPage() {
       setConfirm(null);
       qc.invalidateQueries({ queryKey: ["advances", params.messUsername] });
       qc.invalidateQueries({ queryKey: ["balance", params.messUsername] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts", params.messUsername] });
+      qc.invalidateQueries({ queryKey: ["overview", params.messUsername] });
     },
   });
 
@@ -185,6 +196,7 @@ export default function AdvancesPage() {
           ))}
           {!data?.transactions?.length && <p className="text-sm text-gray-400 py-2">No advance transactions yet.</p>}
         </ul>
+        <Pagination page={data?.page ?? page} totalPages={data?.totalPages ?? 1} total={data?.total} onPage={setPage} />
       </div>
 
       <ConfirmModal

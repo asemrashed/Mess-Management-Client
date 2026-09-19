@@ -2,6 +2,7 @@
 
 import { useMess } from "@/context/MessContext";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { Pagination } from "@/components/Pagination";
 import { api } from "@/lib/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
@@ -71,6 +72,7 @@ export default function GroceriesPage() {
 
   const [items, setItems] = useState<GroceryItemDraft[]>([emptyItem()]);
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().slice(0, 10));
+  const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<GroceryPurchase | null>(null);
   const [editItems, setEditItems] = useState<GroceryItemDraft[]>([emptyItem()]);
   const [editDate, setEditDate] = useState("");
@@ -83,8 +85,11 @@ export default function GroceriesPage() {
   >(null);
 
   const { data } = useQuery({
-    queryKey: ["groceries", params.messUsername],
-    queryFn: () => api.get<{ purchases: GroceryPurchase[] }>(`/mess/${params.messUsername}/groceries`),
+    queryKey: ["groceries", params.messUsername, page],
+    queryFn: () =>
+      api.get<{ purchases: GroceryPurchase[]; page: number; totalPages: number; total: number }>(
+        `/mess/${params.messUsername}/groceries?page=${page}&pageSize=10`
+      ),
     refetchInterval: 20000,
   });
 
@@ -114,7 +119,9 @@ export default function GroceriesPage() {
     onSuccess: () => {
       setItems([emptyItem()]);
       setConfirm(null);
+      setPage(1);
       qc.invalidateQueries({ queryKey: ["groceries", params.messUsername] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts", params.messUsername] });
     },
   });
 
@@ -125,6 +132,7 @@ export default function GroceriesPage() {
       setEditing(null);
       setConfirm(null);
       qc.invalidateQueries({ queryKey: ["groceries", params.messUsername] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts", params.messUsername] });
     },
   });
 
@@ -133,6 +141,7 @@ export default function GroceriesPage() {
     onSuccess: () => {
       setConfirm(null);
       qc.invalidateQueries({ queryKey: ["groceries", params.messUsername] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts", params.messUsername] });
     },
   });
 
@@ -142,6 +151,7 @@ export default function GroceriesPage() {
     onSuccess: () => {
       setConfirm(null);
       qc.invalidateQueries({ queryKey: ["groceries", params.messUsername] });
+      qc.invalidateQueries({ queryKey: ["sidebar-counts", params.messUsername] });
     },
   });
 
@@ -281,7 +291,7 @@ export default function GroceriesPage() {
       </form>
 
       <div className="card">
-        <h2 className="font-medium mb-3">Recent purchases</h2>
+        <h2 className="font-medium mb-3">Grocery history</h2>
         <ul className="divide-y text-sm">
           {data?.purchases?.map((p) => (
             <li key={p.id} className="py-3 space-y-2">
@@ -371,6 +381,12 @@ export default function GroceriesPage() {
           ))}
           {!data?.purchases?.length && <p className="text-sm text-gray-400 py-2">No purchases yet.</p>}
         </ul>
+        <Pagination
+          page={data?.page ?? page}
+          totalPages={data?.totalPages ?? 1}
+          total={data?.total}
+          onPage={setPage}
+        />
       </div>
 
       <ConfirmModal
